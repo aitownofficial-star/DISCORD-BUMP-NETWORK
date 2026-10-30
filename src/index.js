@@ -20,8 +20,8 @@ web.get("/", (_req, res) => res.sendFile(path.join(__dirname, "..", "public", "i
 web.get("/api/stats", async (_req, res) => {
   try {
     const totals = await pool.query("SELECT COUNT(DISTINCT guild_id)::int AS server_count, COUNT(*)::int AS bump_count, COUNT(*) FILTER (WHERE bumped_at >= NOW() - INTERVAL '1 day')::int AS recent_count FROM bump_events");
-    const servers = await pool.query("SELECT guild_id AS id, MAX(guild_name) AS name, COUNT(*)::int AS bump_count, MAX(bumped_at) AS last_bump_at FROM bump_events GROUP BY guild_id ORDER BY MAX(bumped_at) DESC LIMIT 100");
-    res.json({ serverCount: totals.rows[0].server_count, bumpCount: totals.rows[0].bump_count, recentCount: totals.rows[0].recent_count, servers: servers.rows.map((s) => ({ id: s.id, name: s.name, bumpCount: s.bump_count, lastBumpAt: s.last_bump_at })) });
+    const servers = await pool.query("SELECT e.guild_id AS id, MAX(e.guild_name) AS name, COUNT(*)::int AS bump_count, MAX(e.bumped_at) AS last_bump_at, MAX(gs.invite_url) AS invite_url FROM bump_events e LEFT JOIN guild_settings gs ON gs.guild_id = e.guild_id GROUP BY e.guild_id ORDER BY MAX(e.bumped_at) DESC LIMIT 100");
+    res.json({ serverCount: totals.rows[0].server_count, bumpCount: totals.rows[0].bump_count, recentCount: totals.rows[0].recent_count, servers: servers.rows.map((s) => ({ id: s.id, name: s.name, bumpCount: s.bump_count, lastBumpAt: s.last_bump_at, inviteUrl: s.invite_url })) });
   } catch (error) { console.error("[DIF] 통계 조회 오류:", error); res.status(503).json({ error: "통계를 불러올 수 없습니다." }); }
 });
 
@@ -106,10 +106,50 @@ async function initializeDatabase() {
       detector TEXT NOT NULL DEFAULT 'discoboard'
         CHECK (detector IN ('discoboard', 'disboard')),
       announcement_channel_id TEXT,
+      invite_url TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await pool.query("ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS invite_url TEXT");
+}
+
+async function getOrCreateServerInvite(guild, preferredChannelId) {
+  const settings = await getSettings(guild.id);
+  if (settings.invite_url) return settings.invite_url;
+
+  let channel = preferredChannelId
+    ? await guild.channels.fetch(preferredChannelId).catch(() => null)
+    : null;
+  if (!channel?.isTextBased() || !channel?.createInvite) {
+    channel = guild.systemChannel?.isTextBased() ? guild.systemChannel : null;
+  }
+  if (!channel?.createInvite) {
+    channel = guild.channels.cache.find((item) =>
+      item.isTextBased() && item.permissionsFor(guild.members.me)?.has(PermissionFlagsBits.CreateInstantInvite)
+    ) || null;
+  }
+  if (!channel) {
+    console.warn("[DIF] 초대 링크를 만들 수 있는 채널이 없습니다:", guild.id);
+    return null;
+  }
+
+  const invite = await channel.createInvite({
+    maxAge: 0,
+    maxUses: 0,
+    unique: false,
+    reason: "DIF 네트워크 서버 공개 초대 링크",
+  }).catch((error) => {
+    console.error("[DIF] 초대 링크 생성 실패:", error);
+    return null;
+  });
+  if (!invite) return null;
+
+  await pool.query(
+    "UPDATE guild_settings SET invite_url = $2, updated_at = NOW() WHERE guild_id = $1",
+    [guild.id, invite.url]
+  );
+  return invite.url;
 }
 
 async function registerCommands() {
@@ -214,6 +254,7 @@ client.on("messageCreate", async (message) => {
       const accepted = { rowCount: 1, rows: [{ bumped_at: new Date() }] };
 
       const settings = await getSettings(message.guild.id);
+      const inviteUrl = await getOrCreateServerInvite(message.guild, settings.announcement_channel_id);
       const channel = settings.announcement_channel_id
         ? await message.guild.channels.fetch(settings.announcement_channel_id).catch(() => null)
         : null;
@@ -225,10 +266,11 @@ client.on("messageCreate", async (message) => {
       await message.react("🧡").catch(() => {});
       if (channel?.isTextBased()) {
         await channel.send({ embeds: [
-          new EmbedBuilder().setColor(0x69ddeb).setTitle("🧡 DIF 자동 범프 완료")
-            .setDescription(`**${message.guild.name}** 서버에서 지정 사용자의 범프 요청을 처리했습니다.`)
+          new EmbedBuilder().setColor(0x69ddeb).setTitle("🧡 서버 범프 완료!")
+            .setDescription(`**${message.guild.name}** 서버의 범프가 완료되었습니다.`)
             .addFields({ name: "요청 키워드", value: message.content.includes("갱신") ? "갱신" : "범프", inline: true },
-                       { name: "대기시간", value: "120분", inline: true })
+                       { name: "대기시간", value: "제한 없음", inline: true },
+                       ...(inviteUrl ? [{ name: "서버 초대 링크", value: inviteUrl, inline: false }] : []))
             .setTimestamp(accepted.rows[0].bumped_at)
             .setFooter({ text: "DIF — Discord Bump Network" })
         ] }).catch((e) => console.error("[DIF] 공개 Embed 전송 실패:", e));
@@ -242,6 +284,7 @@ client.on("messageCreate", async (message) => {
     const sourceName = BUMP_BOTS[message.author.id];
     if (!sourceName || !containsBumpKeyword(message)) return;
     const settings = await getSettings(message.guild.id);
+    const inviteUrl = await getOrCreateServerInvite(message.guild, settings.announcement_channel_id);
     const saved = await pool.query("INSERT INTO bump_events (guild_id, guild_name, source) VALUES ($1, $2, $3) RETURNING bumped_at", [message.guild.id, message.guild.name, sourceName]);
     await message.react("🧡").catch((e) => console.error("[DIF] 반응 추가 실패:", e));
     if (settings.announcement_channel_id) {
@@ -250,9 +293,10 @@ client.on("messageCreate", async (message) => {
         const count = await pool.query("SELECT COUNT(*)::int AS n FROM bump_events WHERE guild_id = $1", [message.guild.id]);
         const embed = new EmbedBuilder()
           .setColor(0x69ddeb)
-          .setTitle("🧡 DIF 범프 감지 완료")
-          .setDescription("**" + message.guild.name + "** 서버에서 범프/갱신 메시지가 감지되었습니다.")
-          .addFields({ name: "감지 서비스", value: sourceName, inline: true }, { name: "누적 감지 횟수", value: String(count.rows[0].n), inline: true })
+          .setTitle("🧡 서버 범프 완료!")
+          .setDescription("**" + message.guild.name + "** 서버의 범프가 완료되었습니다.")
+          .addFields({ name: "감지 서비스", value: sourceName, inline: true }, { name: "누적 감지 횟수", value: String(count.rows[0].n), inline: true },
+                     ...(inviteUrl ? [{ name: "서버 초대 링크", value: inviteUrl, inline: false }] : []))
           .setTimestamp(saved.rows[0].bumped_at)
           .setFooter({ text: "DIF — Discord Bump Network" });
         await channel.send({ embeds: [embed] }).catch((e) => console.error("[DIF] 공개 Embed 전송 실패:", e));
