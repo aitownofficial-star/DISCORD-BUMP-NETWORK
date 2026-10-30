@@ -18,7 +18,7 @@ const web = express();
 const PORT = Number(process.env.PORT) || 10000;
 
 web.use(express.static(path.join(__dirname, "..", "public")));
-web.get("/개인정보-보호-정책", (_req, res) => res.sendFile(path.join(__dirname, "..", "public", "privacy-policy.html")));
+web.get("/privacy-policy", (_req, res) => res.sendFile(path.join(__dirname, "..", "public", "privacy-policy.html")));
 web.get("/", (_req, res) => res.sendFile(path.join(__dirname, "..", "public", "index.html")));
 web.get("/api/stats", async (_req, res) => {
   try {
