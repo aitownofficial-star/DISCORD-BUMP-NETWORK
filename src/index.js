@@ -6,15 +6,23 @@ const {
   SlashCommandBuilder,
   PermissionFlagsBits,
   ChannelType,
+  EmbedBuilder,
 } = require("discord.js");
 const { Pool } = require("pg");
 const express = require("express");
+const path = require("path");
 
 const web = express();
 const PORT = Number(process.env.PORT) || 10000;
 
-web.get("/", (_req, res) => {
-  res.status(200).send("DIF - Discord Bump Network is running.");
+web.use(express.static(path.join(__dirname, "..", "public")));
+web.get("/", (_req, res) => res.sendFile(path.join(__dirname, "..", "public", "index.html")));
+web.get("/api/stats", async (_req, res) => {
+  try {
+    const totals = await pool.query("SELECT COUNT(DISTINCT guild_id)::int AS server_count, COUNT(*)::int AS bump_count, COUNT(*) FILTER (WHERE bumped_at >= NOW() - INTERVAL '1 day')::int AS recent_count FROM bump_events");
+    const servers = await pool.query("SELECT guild_id AS id, MAX(guild_name) AS name, COUNT(*)::int AS bump_count, MAX(bumped_at) AS last_bump_at FROM bump_events GROUP BY guild_id ORDER BY MAX(bumped_at) DESC LIMIT 100");
+    res.json({ serverCount: totals.rows[0].server_count, bumpCount: totals.rows[0].bump_count, recentCount: totals.rows[0].recent_count, servers: servers.rows.map((s) => ({ id: s.id, name: s.name, bumpCount: s.bump_count, lastBumpAt: s.last_bump_at })) });
+  } catch (error) { console.error("[DIF] 통계 조회 오류:", error); res.status(503).json({ error: "통계를 불러올 수 없습니다." }); }
 });
 
 web.get("/health", (_req, res) => {
@@ -95,6 +103,15 @@ async function initializeDatabase() {
     )
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bump_events (
+      id BIGSERIAL PRIMARY KEY,
+      guild_id TEXT NOT NULL,
+      guild_name TEXT NOT NULL,
+      source TEXT NOT NULL,
+      bumped_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS guild_settings (
       guild_id TEXT PRIMARY KEY,
@@ -188,6 +205,32 @@ async function handleBump(interaction) {
     ephemeral: true,
   });
 }
+
+const BUMP_BOTS = { disboard: "302050872383242240", discoboard: "1467542161548382414" };
+function looksLikeSuccessfulBump(message) {
+  const text = [message.content || "", ...message.embeds.flatMap((e) => [e.title || "", e.description || ""])].join(" ").toLowerCase();
+  return /(bump(ed)? (success|successful|완료|성공)|범프.{0,12}(완료|성공)|성공적으로.{0,12}(범프|bump)|서버.{0,12}(범프|bump).{0,12}(완료|성공))/i.test(text);
+}
+client.on("messageCreate", async (message) => {
+  try {
+    if (!message.guild || !message.author?.bot) return;
+    const entry = Object.entries(BUMP_BOTS).find(([, id]) => id === message.author.id);
+    if (!entry || !looksLikeSuccessfulBump(message)) return;
+    const detector = entry[0];
+    const settings = await getSettings(message.guild.id);
+    if (settings.detector !== detector) return;
+    const saved = await pool.query("INSERT INTO bump_events (guild_id, guild_name, source) VALUES ($1, $2, $3) RETURNING bumped_at", [message.guild.id, message.guild.name, detector]);
+    await message.react("🧡").catch((e) => console.error("[DIF] 반응 추가 실패:", e));
+    if (settings.announcement_channel_id) {
+      const channel = await message.guild.channels.fetch(settings.announcement_channel_id).catch(() => null);
+      if (channel?.isTextBased()) {
+        const count = await pool.query("SELECT COUNT(*)::int AS n FROM bump_events WHERE guild_id = $1", [message.guild.id]);
+        const embed = new EmbedBuilder().setColor(0x69ddeb).setTitle("🧡 DIF 범프 감지 완료").setDescription("**" + message.guild.name + "** 서버의 범프가 확인되었습니다.").addFields({ name: "감지 봇", value: detector === "discoboard" ? "디코보드" : "DISBOARD", inline: true }, { name: "누적 범프", value: String(count.rows[0].n), inline: true }).setTimestamp(saved.rows[0].bumped_at).setFooter({ text: "DIF — Discord Bump Network" });
+        await channel.send({ embeds: [embed] }).catch((e) => console.error("[DIF] 안내 전송 실패:", e));
+      }
+    }
+  } catch (error) { console.error("[DIF] 범프 감지 처리 오류:", error); }
+});
 
 client.once("ready", () => {
   console.log(`[DIF] 로그인 완료: ${client.user.tag}`);
