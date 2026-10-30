@@ -194,41 +194,54 @@ async function handleBump(interaction) {
       .fetch(settings.announcement_channel_id)
       .catch(() => null);
     if (channel?.isTextBased()) {
-      await channel.send(
-        `📣 **${interaction.guild.name}** 서버가 DIF 범프를 실행했습니다!`
-      ).catch((error) => console.error("[DIF] 안내 전송 실패:", error));
+      const embed = new EmbedBuilder().setColor(0x69ddeb).setTitle("🧡 DIF 범프 실행").setDescription("**" + interaction.guild.name + "** 서버에서 DIF 범프가 실행되었습니다.").setTimestamp().setFooter({ text: "DIF — Discord Bump Network" });
+      await channel.send({ embeds: [embed] }).catch((error) => console.error("[DIF] 공개 Embed 전송 실패:", error));
     }
   }
 
   return interaction.reply({
     content: "범프가 접수되었습니다. 이 서버의 다음 범프까지 120분의 대기시간이 적용됩니다.",
-    ephemeral: true,
+    ephemeral: false,
   });
 }
 
-const BUMP_BOTS = { disboard: "302050872383242240", discoboard: "1467542161548382414" };
-function looksLikeSuccessfulBump(message) {
-  const text = [message.content || "", ...message.embeds.flatMap((e) => [e.title || "", e.description || ""])].join(" ").toLowerCase();
-  return /(bump(ed)? (success|successful|완료|성공)|범프.{0,12}(완료|성공)|성공적으로.{0,12}(범프|bump)|서버.{0,12}(범프|bump).{0,12}(완료|성공))/i.test(text);
+const BUMP_BOTS = { "302050872383242240": "DISBOARD", "1467542161548382414": "디코리스트" };
+function containsBumpKeyword(message) {
+  const parts = [message.content || ""];
+  for (const embed of message.embeds) {
+    parts.push(embed.title || "", embed.description || "");
+    for (const field of embed.fields || []) parts.push(field.name || "", field.value || "");
+  }
+  return /(갱신|범프)/i.test(parts.join(" "));
 }
+
 client.on("messageCreate", async (message) => {
   try {
     if (!message.guild || !message.author?.bot) return;
-    const entry = Object.entries(BUMP_BOTS).find(([, id]) => id === message.author.id);
-    if (!entry || !looksLikeSuccessfulBump(message)) return;
-    const detector = entry[0];
+    const sourceName = BUMP_BOTS[message.author.id];
+    if (!sourceName || !containsBumpKeyword(message)) return;
     const settings = await getSettings(message.guild.id);
-    if (settings.detector !== detector) return;
-    const saved = await pool.query("INSERT INTO bump_events (guild_id, guild_name, source) VALUES ($1, $2, $3) RETURNING bumped_at", [message.guild.id, message.guild.name, detector]);
+    const saved = await pool.query("INSERT INTO bump_events (guild_id, guild_name, source) VALUES ($1, $2, $3) RETURNING bumped_at", [message.guild.id, message.guild.name, sourceName]);
     await message.react("🧡").catch((e) => console.error("[DIF] 반응 추가 실패:", e));
     if (settings.announcement_channel_id) {
       const channel = await message.guild.channels.fetch(settings.announcement_channel_id).catch(() => null);
       if (channel?.isTextBased()) {
         const count = await pool.query("SELECT COUNT(*)::int AS n FROM bump_events WHERE guild_id = $1", [message.guild.id]);
-        const embed = new EmbedBuilder().setColor(0x69ddeb).setTitle("🧡 DIF 범프 감지 완료").setDescription("**" + message.guild.name + "** 서버의 범프가 확인되었습니다.").addFields({ name: "감지 봇", value: detector === "discoboard" ? "디코보드" : "DISBOARD", inline: true }, { name: "누적 범프", value: String(count.rows[0].n), inline: true }).setTimestamp(saved.rows[0].bumped_at).setFooter({ text: "DIF — Discord Bump Network" });
-        await channel.send({ embeds: [embed] }).catch((e) => console.error("[DIF] 안내 전송 실패:", e));
+        const embed = new EmbedBuilder()
+          .setColor(0x69ddeb)
+          .setTitle("🧡 DIF 범프 감지 완료")
+          .setDescription("**" + message.guild.name + "** 서버에서 범프/갱신 메시지가 감지되었습니다.")
+          .addFields({ name: "감지 서비스", value: sourceName, inline: true }, { name: "누적 감지 횟수", value: String(count.rows[0].n), inline: true })
+          .setTimestamp(saved.rows[0].bumped_at)
+          .setFooter({ text: "DIF — Discord Bump Network" });
+        await channel.send({ embeds: [embed] }).catch((e) => console.error("[DIF] 공개 Embed 전송 실패:", e));
+      } else {
+        console.warn("[DIF] 공지 채널이 없거나 메시지를 보낼 수 없습니다:", message.guild.id);
       }
+    } else {
+      console.warn("[DIF] 공지 채널 미설정 - /공지채널로 설정해 주세요:", message.guild.id);
     }
+    console.log("[DIF] " + message.guild.name + " 범프 키워드 감지 (" + sourceName + ")");
   } catch (error) { console.error("[DIF] 범프 감지 처리 오류:", error); }
 });
 
@@ -297,12 +310,10 @@ client.on("interactionCreate", async (interaction) => {
         [interaction.guildId, COOLDOWN_MINUTES]
       );
       const left = cooldown.rows[0]?.minutes_left ?? 0;
-      const detectorName =
-        settings.detector === "discoboard" ? "디코보드" : "DISBOARD";
       return interaction.reply({
         content:
           `**DIF 서버 설정**\n` +
-          `감지 대상: ${detectorName}\n` +
+          `감지 대상: DISBOARD + 디코리스트 (갱신/범프 키워드)\n` +
           `안내 채널: ${
             settings.announcement_channel_id
               ? `<#${settings.announcement_channel_id}>`
