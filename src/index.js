@@ -7,6 +7,7 @@ const {
   PermissionFlagsBits,
   ChannelType,
   EmbedBuilder,
+  ActivityType,
 } = require("discord.js");
 const { Pool } = require("pg");
 const express = require("express");
@@ -301,7 +302,17 @@ client.on("messageCreate", async (message) => {
 });
 
 client.once("ready", () => {
+  // Discord 프로필 상태를 명시적으로 온라인으로 설정합니다.
+  client.user.setPresence({
+    status: "online",
+    activities: [{
+      name: "DIF — Discord Bump Network",
+      type: ActivityType.Watching,
+    }],
+  });
+
   console.log(`[DIF] 로그인 완료: ${client.user.tag}`);
+  console.log(`[DIF] Presence 설정 완료: online | DIF — Discord Bump Network`);
   console.log(`[DIF] Gateway 상태: ${client.ws.status}, Ping: ${client.ws.ping}ms`);
 });
 
