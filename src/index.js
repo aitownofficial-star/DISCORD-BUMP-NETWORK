@@ -244,71 +244,56 @@ function containsBumpKeyword(message) {
 client.on("messageCreate", async (message) => {
   try {
     if (!message.guild || !message.author) return;
-
-    // 지정된 사람 계정이 "범프" 또는 "갱신"을 보내면 DIF 범프를 자동 실행
-    if (message.author.id === AUTO_BUMP_USER_ID) {
-      if (!/(갱신|범프)/i.test(message.content || "")) return;
-
-      // 지정 사용자(1252620171089019021)는 범프 쿨타임을 적용하지 않습니다.
-      // 일반 /범프 명령어 및 다른 서버의 쿨타임 기록에는 영향을 주지 않습니다.
-      const accepted = { rowCount: 1, rows: [{ bumped_at: new Date() }] };
-
-      const settings = await getSettings(message.guild.id);
-      const inviteUrl = await getOrCreateServerInvite(message.guild, settings.announcement_channel_id);
-      const channel = settings.announcement_channel_id
-        ? await message.guild.channels.fetch(settings.announcement_channel_id).catch(() => null)
-        : null;
-
-      await pool.query(
-        "INSERT INTO bump_events (guild_id, guild_name, source) VALUES ($1, $2, $3)",
-        [message.guild.id, message.guild.name, "지정 사용자 자동 범프"]
-      );
-      await message.react("🧡").catch(() => {});
-      if (channel?.isTextBased()) {
-        await channel.send({ embeds: [
-          new EmbedBuilder().setColor(0x69ddeb).setTitle("🧡 서버 범프 완료!")
-            .setDescription(`**${message.guild.name}** 서버의 범프가 완료되었습니다.`)
-            .addFields({ name: "요청 키워드", value: message.content.includes("갱신") ? "갱신" : "범프", inline: true },
-                       { name: "대기시간", value: "제한 없음", inline: true },
-                       ...(inviteUrl ? [{ name: "서버 초대 링크", value: inviteUrl, inline: false }] : []))
-            .setTimestamp(accepted.rows[0].bumped_at)
-            .setFooter({ text: "DIF — Discord Bump Network" })
-        ] }).catch((e) => console.error("[DIF] 공개 Embed 전송 실패:", e));
-      }
-      console.log("[DIF] 지정 사용자 자동 범프 실행:", message.guild.name);
-      return;
-    }
-
-    // 특정 범프 봇뿐 아니라, 서버에서 읽힌 모든 메시지/Embed의 범프·갱신 키워드를 감지
     if (message.author.id === client.user.id) return;
-    if (!containsBumpKeyword(message)) return;
-    const sourceName = BUMP_BOTS[message.author.id]
-      || (message.author.bot ? `봇: ${message.author.username}` : `사용자: ${message.author.username}`);
-    const settings = await getSettings(message.guild.id);
-    const inviteUrl = await getOrCreateServerInvite(message.guild, settings.announcement_channel_id);
-    const saved = await pool.query("INSERT INTO bump_events (guild_id, guild_name, source) VALUES ($1, $2, $3) RETURNING bumped_at", [message.guild.id, message.guild.name, sourceName]);
+
+    // 지정된 사람 계정은 쿨타임 없이 범프 키워드를 감지합니다.
+    if (message.author.id === AUTO_BUMP_USER_ID && !/(갱신|범프)/i.test(message.content || "")) return;
+
+    // 메시지 본문 또는 Embed에서 범프/갱신 키워드를 감지합니다.
+    if (message.author.id !== AUTO_BUMP_USER_ID && !containsBumpKeyword(message)) return;
+
+    const isTrustedUser = message.author.id === AUTO_BUMP_USER_ID;
+    const sourceName = isTrustedUser
+      ? "지정 사용자 자동 범프"
+      : (BUMP_BOTS[message.author.id]
+          || (message.author.bot ? `봇: ${message.author.username}` : `사용자: ${message.author.username}`));
+
+    const saved = await pool.query(
+      "INSERT INTO bump_events (guild_id, guild_name, source) VALUES ($1, $2, $3) RETURNING bumped_at",
+      [message.guild.id, message.guild.name, sourceName]
+    );
+    const count = await pool.query(
+      "SELECT COUNT(*)::int AS n FROM bump_events WHERE guild_id = $1",
+      [message.guild.id]
+    );
+
     await message.react("🧡").catch((e) => console.error("[DIF] 반응 추가 실패:", e));
-    if (settings.announcement_channel_id) {
-      const channel = await message.guild.channels.fetch(settings.announcement_channel_id).catch(() => null);
-      if (channel?.isTextBased()) {
-        const count = await pool.query("SELECT COUNT(*)::int AS n FROM bump_events WHERE guild_id = $1", [message.guild.id]);
-        const embed = new EmbedBuilder()
-          .setColor(0x69ddeb)
-          .setTitle("🧡 서버 범프 완료!")
-          .setDescription("**" + message.guild.name + "** 서버의 범프가 완료되었습니다.")
-          .addFields({ name: "감지 서비스", value: sourceName, inline: true }, { name: "누적 감지 횟수", value: String(count.rows[0].n), inline: true },
-                     ...(inviteUrl ? [{ name: "서버 초대 링크", value: inviteUrl, inline: false }] : []))
-          .setTimestamp(saved.rows[0].bumped_at)
-          .setFooter({ text: "DIF — Discord Bump Network" });
-        await channel.send({ embeds: [embed] }).catch((e) => console.error("[DIF] 공개 Embed 전송 실패:", e));
-      } else {
-        console.warn("[DIF] 공지 채널이 없거나 메시지를 보낼 수 없습니다:", message.guild.id);
-      }
+
+    // 공지 채널 설정과 관계없이 감지된 원본 메시지 채널에 Embed를 보냅니다.
+    if (message.channel?.isTextBased() && message.channel.send) {
+      const embed = new EmbedBuilder()
+        .setColor(0x69ddeb)
+        .setTitle("🧡 서버 범프 완료!")
+        .setDescription(`**${message.guild.name}** 서버의 범프가 완료되었습니다.`)
+        .addFields(
+          { name: "감지 서비스", value: sourceName, inline: true },
+          { name: "누적 감지 횟수", value: String(count.rows[0].n), inline: true },
+          { name: "감지 채널", value: `<#${message.channel.id}>`, inline: true }
+        )
+        .setTimestamp(saved.rows[0].bumped_at)
+        .setFooter({ text: "DIF — Discord Bump Network" });
+
+      await message.channel.send({ embeds: [embed] }).catch((e) => {
+        console.error("[DIF] 원본 채널 Embed 전송 실패:", e);
+      });
     } else {
-      console.warn("[DIF] 공지 채널 미설정 - /공지채널로 설정해 주세요:", message.guild.id);
+      console.warn("[DIF] 감지된 채널에 메시지를 보낼 수 없습니다:", message.channelId);
     }
+
     console.log("[DIF] " + message.guild.name + " 범프 키워드 감지 (" + sourceName + ")");
-  } catch (error) { console.error("[DIF] 범프 감지 처리 오류:", error); }
+  } catch (error) {
+    console.error("[DIF] 범프 감지 처리 오류:", error);
+  }
 });
 
 client.once("ready", () => {
