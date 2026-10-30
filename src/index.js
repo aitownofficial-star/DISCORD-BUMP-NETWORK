@@ -29,7 +29,9 @@ web.get("/health", (_req, res) => {
   res.status(200).json({
     ok: true,
     service: "DIF",
-    bot: client.isReady() ? "online" : "starting",
+    bot: client.isReady() ? "online" : "offline",
+    gatewayStatus: client.ws.status,
+    ping: client.ws.ping,
   });
 });
 
@@ -290,6 +292,48 @@ client.on("messageCreate", async (message) => {
 
 client.once("ready", () => {
   console.log(`[DIF] 로그인 완료: ${client.user.tag}`);
+  console.log(`[DIF] Gateway 상태: ${client.ws.status}, Ping: ${client.ws.ping}ms`);
+});
+
+// Discord Gateway 연결 상태 추적
+client.on("error", (error) => {
+  console.error("[DIF] Discord 클라이언트 오류:", error);
+});
+
+client.on("shardError", (error, shardId) => {
+  console.error(`[DIF] Gateway Shard ${shardId} 오류:`, error);
+});
+
+client.on("shardDisconnect", (closeEvent, shardId) => {
+  console.error(`[DIF] Gateway 연결 종료 (Shard ${shardId}):`, {
+    code: closeEvent.code,
+    reason: closeEvent.reason || "사유 없음",
+    wasClean: closeEvent.wasClean,
+  });
+});
+
+client.on("shardReconnecting", (shardId) => {
+  console.warn(`[DIF] Gateway 재연결 시도 중 (Shard ${shardId})`);
+});
+
+client.on("shardResume", (shardId, replayedEvents) => {
+  console.log(`[DIF] Gateway 연결 복구 (Shard ${shardId}), 재생 이벤트: ${replayedEvents}`);
+});
+
+client.on("invalidated", () => {
+  console.error("[DIF] Discord 세션이 무효화되었습니다. 토큰 또는 세션 상태를 확인해 주세요.");
+});
+
+client.on("warn", (warning) => {
+  console.warn("[DIF] Discord 경고:", warning);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[DIF] 처리되지 않은 Promise 오류:", reason);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("[DIF] 처리되지 않은 예외:", error);
 });
 
 client.on("interactionCreate", async (interaction) => {
