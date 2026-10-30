@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#090f20">
+<title>DIF — Discord Bump Network</title>
+<style>
+:root{color-scheme:dark;--bg:#090f20;--panel:#111b32;--line:#243451;--muted:#9aa9c2;--blue:#6c9cff;--cyan:#69e0ef}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 50% -20%,#1c3764 0,transparent 55%),var(--bg);color:#f4f7ff;font:15px/1.5 Inter,system-ui,sans-serif}
+main{max-width:1100px;margin:auto;padding:48px 22px}.top{display:flex;align-items:center;gap:14px;margin-bottom:42px}.logo{width:52px;height:52px;border-radius:16px;background:linear-gradient(135deg,#477bff,#65ddeb);display:grid;place-items:center;color:#081329;font-weight:900;font-size:22px}.brand{font-size:25px;font-weight:850;letter-spacing:.5px}.sub{color:var(--muted);font-size:13px}.hero{margin:30px 0 26px}.eyebrow{color:var(--cyan);font-weight:700;letter-spacing:2px;font-size:11px}.hero h1{font-size:clamp(32px,6vw,54px);line-height:1.08;margin:12px 0}.hero p{color:var(--muted);max-width:620px}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:30px 0}.stat,.server{background:linear-gradient(145deg,#14213b,#0e172b);border:1px solid var(--line);border-radius:18px;padding:20px}.stat small{color:var(--muted)}.stat strong{display:block;font-size:30px;margin-top:8px}.section{display:flex;justify-content:space-between;align-items:center;margin:35px 0 15px}.section h2{margin:0;font-size:20px}.section span{color:var(--muted);font-size:12px}.servers{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}.serverhead{display:flex;align-items:center;gap:12px}.avatar{width:42px;height:42px;border-radius:13px;background:#25395d;display:grid;place-items:center;font-weight:800}.server h3{font-size:16px;margin:0}.server p{margin:3px 0 0;color:var(--muted);font-size:12px}.meta{display:flex;justify-content:space-between;border-top:1px solid var(--line);margin-top:18px;padding-top:14px;color:var(--muted);font-size:12px}.empty{border:1px dashed #344563;border-radius:18px;padding:35px;text-align:center;color:var(--muted);grid-column:1/-1}.foot{margin-top:45px;color:#7585a1;font-size:12px;text-align:center}@media(max-width:600px){main{padding:28px 16px}.stats{gap:8px}.stat{padding:14px}.stat strong{font-size:24px}.stat small{font-size:11px}}
+</style>
+</head>
+<body><main>
+<header class="top"><div class="logo">DIF</div><div><div class="brand">DIF <span style="color:#69e0ef">NETWORK</span></div><div class="sub">Discord Bump Network</div></div></header>
+<section class="hero"><div class="eyebrow">COMMUNITY DISCOVERY NETWORK</div><h1>서버를 알리고,<br><span style="color:#69e0ef">함께 성장하세요.</span></h1><p>DIF는 디스코드 서버의 범프 기록과 네트워크 통계를 한곳에서 확인할 수 있는 서비스입니다.</p></section>
+<section class="stats"><div class="stat"><small>등록된 서버</small><strong id="serverCount">-</strong></div><div class="stat"><small>누적 범프</small><strong id="bumpCount">-</strong></div><div class="stat"><small>최근 24시간 범프</small><strong id="recentCount">-</strong></div></section>
+<div class="section"><h2>네트워크 서버</h2><span id="updated">데이터 불러오는 중…</span></div>
+<section class="servers" id="servers"><div class="empty">서버 정보를 불러오고 있어요.</div></section>
+<footer class="foot">DIF — Discord Bump Network · 데이터는 범프 감지 기록을 기준으로 표시됩니다.</footer>
+</main>
+<script>
+const fmt=n=>Number(n||0).toLocaleString('ko-KR');
+async function refresh(){try{const r=await fetch('/api/stats');if(!r.ok)throw Error('stats');const d=await r.json();document.querySelector('#serverCount').textContent=fmt(d.serverCount);document.querySelector('#bumpCount').textContent=fmt(d.bumpCount);document.querySelector('#recentCount').textContent=fmt(d.recentCount);const list=Array.isArray(d.servers)?d.servers:[];const root=document.querySelector('#servers');root.replaceChildren();if(!list.length){root.innerHTML='<div class="empty">아직 공개된 범프 기록이 없습니다.</div>'}else{for(const s of list){const card=document.createElement('article');card.className='server';const head=document.createElement('div');head.className='serverhead';const av=document.createElement('div');av.className='avatar';av.textContent=(s.name||'D').slice(0,1).toUpperCase();const info=document.createElement('div');const h=document.createElement('h3');h.textContent=s.name||'이름 없는 서버';const p=document.createElement('p');p.textContent='DIF 네트워크 등록 서버';info.append(h,p);head.append(av,info);const meta=document.createElement('div');meta.className='meta';const count=document.createElement('span');count.textContent='누적 범프 '+fmt(s.bumpCount);const date=document.createElement('span');date.textContent=s.lastBumpAt?'최근 '+new Date(s.lastBumpAt).toLocaleString('ko-KR'):'기록 없음';meta.append(count,date);card.append(head,meta);root.append(card)}}document.querySelector('#updated').textContent='마지막 갱신 '+new Date().toLocaleTimeString('ko-KR')}catch(e){document.querySelector('#updated').textContent='통계 API 연결 대기 중';document.querySelector('#servers').innerHTML='<div class="empty">아직 통계 API가 연결되지 않았습니다.</div>'}}
+refresh();setInterval(refresh,30000);
+</script></body></html>
