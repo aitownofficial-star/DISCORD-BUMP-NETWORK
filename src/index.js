@@ -66,20 +66,6 @@ const commands = [
     .setName("범프")
     .setDescription("DIF 범프를 실행합니다."),
   new SlashCommandBuilder()
-    .setName("감지설정")
-    .setDescription("외부 범프 감지 대상을 설정합니다.")
-    .addStringOption((option) =>
-      option
-        .setName("대상")
-        .setDescription("감지할 범프봇")
-        .setRequired(true)
-        .addChoices(
-          { name: "디코보드", value: "discoboard" },
-          { name: "DISBOARD", value: "disboard" }
-        )
-    )
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
-  new SlashCommandBuilder()
     .setName("공지채널")
     .setDescription("DIF 범프 안내를 보낼 채널을 설정합니다.")
     .addChannelOption((option) =>
@@ -184,7 +170,7 @@ async function handleBump(interaction) {
     const minutes = previous.rows[0]?.minutes_left ?? COOLDOWN_MINUTES;
     return interaction.reply({
       content: `아직 범프 대기시간이 남아 있습니다. 약 ${minutes}분 후 다시 시도해 주세요.`,
-      ephemeral: true,
+      ephemeral: false,
     });
   }
 
@@ -261,22 +247,6 @@ client.on("interactionCreate", async (interaction) => {
     if (!interaction.guildId) {
       return interaction.reply({
         content: "서버 안에서만 사용할 수 있는 명령어입니다.",
-        ephemeral: true,
-      });
-    }
-
-    if (interaction.commandName === "감지설정") {
-      const detector = interaction.options.getString("대상", true);
-      await pool.query(
-        `INSERT INTO guild_settings (guild_id, detector, updated_at)
-         VALUES ($1, $2, NOW())
-         ON CONFLICT (guild_id) DO UPDATE
-           SET detector = EXCLUDED.detector, updated_at = NOW()`,
-        [interaction.guildId, detector]
-      );
-      const label = detector === "discoboard" ? "디코보드" : "DISBOARD";
-      return interaction.reply({
-        content: `외부 범프 감지 대상으로 **${label}**을(를) 설정했습니다.`,
         ephemeral: true,
       });
     }
