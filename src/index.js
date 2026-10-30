@@ -209,38 +209,14 @@ client.on("messageCreate", async (message) => {
     if (message.author.id === AUTO_BUMP_USER_ID) {
       if (!/(갱신|범프)/i.test(message.content || "")) return;
 
-      const accepted = await pool.query(
-        `INSERT INTO bump_cooldowns (guild_id, bumped_at)
-         VALUES ($1, NOW())
-         ON CONFLICT (guild_id) DO UPDATE
-           SET bumped_at = NOW()
-           WHERE bump_cooldowns.bumped_at <= NOW() - ($2 * INTERVAL '1 minute')
-         RETURNING bumped_at`,
-        [message.guild.id, COOLDOWN_MINUTES]
-      );
+      // 지정 사용자(1252620171089019021)는 범프 쿨타임을 적용하지 않습니다.
+      // 일반 /범프 명령어 및 다른 서버의 쿨타임 기록에는 영향을 주지 않습니다.
+      const accepted = { rowCount: 1, rows: [{ bumped_at: new Date() }] };
 
       const settings = await getSettings(message.guild.id);
       const channel = settings.announcement_channel_id
         ? await message.guild.channels.fetch(settings.announcement_channel_id).catch(() => null)
         : null;
-
-      if (accepted.rowCount === 0) {
-        const previous = await pool.query(
-          `SELECT GREATEST(0, CEIL(EXTRACT(EPOCH FROM
-            (bumped_at + ($2 * INTERVAL '1 minute') - NOW())) / 60)::int) AS minutes_left
-           FROM bump_cooldowns WHERE guild_id = $1`,
-          [message.guild.id, COOLDOWN_MINUTES]
-        );
-        const minutes = previous.rows[0]?.minutes_left ?? COOLDOWN_MINUTES;
-        if (channel?.isTextBased()) {
-          await channel.send({ embeds: [
-            new EmbedBuilder().setColor(0xffb454).setTitle("⏳ DIF 범프 대기시간")
-              .setDescription(`요청은 확인했지만 아직 범프 대기시간입니다. 약 ${minutes}분 후 다시 시도해 주세요.`)
-              .setFooter({ text: "DIF — Discord Bump Network" })
-          ] }).catch((e) => console.error("[DIF] 공개 Embed 전송 실패:", e));
-        }
-        return;
-      }
 
       await pool.query(
         "INSERT INTO bump_events (guild_id, guild_name, source) VALUES ($1, $2, $3)",
