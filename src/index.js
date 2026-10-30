@@ -335,17 +335,16 @@ client.on("interactionCreate", async (interaction) => {
         [interaction.guildId, COOLDOWN_MINUTES]
       );
       const left = cooldown.rows[0]?.minutes_left ?? 0;
-      return interaction.reply({
-        content:
-          `**DIF 서버 설정**\n` +
-          `감지 대상: DISBOARD + 디코리스트 (갱신/범프 키워드)\n` +
-          `안내 채널: ${
-            settings.announcement_channel_id
-              ? `<#${settings.announcement_channel_id}>`
-              : "미설정"
-          }\n` +
-          `범프 대기시간: ${left > 0 ? `${left}분 남음` : "대기시간 없음"}`,
-      });
+      const statusEmbed = new EmbedBuilder()
+        .setColor(0x69ddeb)
+        .setTitle("📊 DIF 서버 상태")
+        .addFields(
+          { name: "감지 대상", value: "DISBOARD + 디코리스트 (갱신/범프 키워드)", inline: false },
+          { name: "안내 채널", value: settings.announcement_channel_id ? `<#${settings.announcement_channel_id}>` : "미설정", inline: true },
+          { name: "범프 대기시간", value: left > 0 ? `${left}분 남음` : "대기시간 없음", inline: true }
+        )
+        .setFooter({ text: "DIF — Discord Bump Network" });
+      return interaction.reply({ embeds: [statusEmbed] });
     }
   } catch (error) {
     console.error("[DIF] 명령어 처리 오류:", error);
