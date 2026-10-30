@@ -301,20 +301,31 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-client.once("ready", () => {
-  // Discord 프로필 상태를 명시적으로 온라인으로 설정합니다.
+function updateDIFPresence() {
+  const serverCount = client.guilds.cache.size;
+
   client.user.setPresence({
     status: "online",
     activities: [{
-      name: "DIF — Discord Bump Network",
-      type: ActivityType.Watching,
+      name: "Custom Status",
+      type: ActivityType.Custom,
+      state: `🧡 ${serverCount}개의 서버 홍보중!`,
     }],
   });
 
+  console.log(`[DIF] Presence 갱신: 🧡 ${serverCount}개의 서버 홍보중!`);
+}
+
+client.once("ready", () => {
+  updateDIFPresence();
+
   console.log(`[DIF] 로그인 완료: ${client.user.tag}`);
-  console.log(`[DIF] Presence 설정 완료: online | DIF — Discord Bump Network`);
   console.log(`[DIF] Gateway 상태: ${client.ws.status}, Ping: ${client.ws.ping}ms`);
 });
+
+// 서버에 초대되거나 서버에서 제거될 때 프로필 문구의 숫자를 갱신합니다.
+client.on("guildCreate", () => updateDIFPresence());
+client.on("guildDelete", () => updateDIFPresence());
 
 // Discord Gateway 연결 상태 추적
 client.on("error", (error) => {
