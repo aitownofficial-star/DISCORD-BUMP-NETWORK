@@ -11,7 +11,7 @@ const {
 const { Pool } = require("pg");
 const express = require("express");
 const path = require("path");
-const fs = require("fs");
+require("../pinger");
 
 const web = express();
 const PORT = Number(process.env.PORT) || 10000;
@@ -40,51 +40,7 @@ web.listen(PORT, "0.0.0.0", () => {
   console.log(`[DIF] HTTP server listening on port ${PORT}`);
 });
 
-// pinger.json 설정을 읽어 사이트 상태 확인을 실행합니다.
-const PINGER_CONFIG_PATH = path.join(__dirname, "..", "pinger.json");
 
-function loadPingerConfig() {
-  try {
-    const config = JSON.parse(fs.readFileSync(PINGER_CONFIG_PATH, "utf8"));
-    const intervalMinutes = Number(config.intervalMinutes);
-    const url = typeof config.url === "string" ? config.url.trim() : "";
-    const method = String(config.method || "GET").toUpperCase();
-
-    if (!config.enabled) {
-      console.log("[DIF] pinger.json에서 자동 핑이 비활성화되어 있습니다.");
-      return null;
-    }
-    if (!Number.isFinite(intervalMinutes) || intervalMinutes <= 0) {
-      throw new Error("intervalMinutes는 0보다 큰 숫자여야 합니다.");
-    }
-    if (!url || !["GET", "HEAD"].includes(method)) {
-      throw new Error("url 또는 method 설정이 올바르지 않습니다.");
-    }
-
-    return { intervalMinutes, url, method };
-  } catch (error) {
-    console.error("[DIF] pinger.json 설정을 읽지 못했습니다:", error.message);
-    return null;
-  }
-}
-
-const pingerConfig = loadPingerConfig();
-
-async function selfPing() {
-  if (!pingerConfig) return;
-  try {
-    const response = await fetch(pingerConfig.url, { method: pingerConfig.method });
-    console.log(`[DIF] 자동 핑: HTTP ${response.status}`);
-  } catch (error) {
-    console.error("[DIF] 사이트 핑 실패:", error.message);
-  }
-}
-
-if (pingerConfig) {
-  const intervalMs = pingerConfig.intervalMinutes * 60 * 1000;
-  setInterval(selfPing, intervalMs);
-  console.log(`[DIF] 자동 핑 설정: ${pingerConfig.intervalMinutes}분 간격 (${pingerConfig.method})`);
-}
 
 
 const required = ["DISCORD_TOKEN", "CLIENT_ID", "DATABASE_URL"];
