@@ -279,10 +279,11 @@ client.on("messageCreate", async (message) => {
       return;
     }
 
-    // DISBOARD와 디코리스트 봇 메시지만 감지
-    if (!message.author.bot) return;
-    const sourceName = BUMP_BOTS[message.author.id];
-    if (!sourceName || !containsBumpKeyword(message)) return;
+    // 특정 범프 봇뿐 아니라, 서버에서 읽힌 모든 메시지/Embed의 범프·갱신 키워드를 감지
+    if (message.author.id === client.user.id) return;
+    if (!containsBumpKeyword(message)) return;
+    const sourceName = BUMP_BOTS[message.author.id]
+      || (message.author.bot ? `봇: ${message.author.username}` : `사용자: ${message.author.username}`);
     const settings = await getSettings(message.guild.id);
     const inviteUrl = await getOrCreateServerInvite(message.guild, settings.announcement_channel_id);
     const saved = await pool.query("INSERT INTO bump_events (guild_id, guild_name, source) VALUES ($1, $2, $3) RETURNING bumped_at", [message.guild.id, message.guild.name, sourceName]);
