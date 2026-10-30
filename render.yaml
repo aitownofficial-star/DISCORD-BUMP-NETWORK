@@ -1,10 +1,11 @@
 services:
-  - type: worker
+  - type: web
     name: discord-bump-network
     runtime: node
     plan: free
     buildCommand: npm install
     startCommand: npm start
+    healthCheckPath: /health
     autoDeploy: true
     envVars:
       - key: DISCORD_TOKEN
