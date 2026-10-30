@@ -188,7 +188,8 @@ async function handleBump(interaction) {
   });
 }
 
-const BUMP_BOTS = { "302050872383242240": "DISBOARD", "1467542161548382414": "디코리스트", "1252620171089019021": "추가 범프봇" };
+const BUMP_BOTS = { "302050872383242240": "DISBOARD", "1467542161548382414": "디코리스트" };
+const AUTO_BUMP_USER_ID = "1252620171089019021";
 function containsBumpKeyword(message) {
   const parts = [message.content || ""];
   for (const embed of message.embeds) {
@@ -200,11 +201,68 @@ function containsBumpKeyword(message) {
 
 client.on("messageCreate", async (message) => {
   try {
-    if (!message.guild || !message.author?.bot) return;
+    if (!message.guild || !message.author) return;
+
+    // 지정된 사람 계정이 "범프" 또는 "갱신"을 보내면 DIF 범프를 자동 실행
+    if (message.author.id === AUTO_BUMP_USER_ID) {
+      if (!/(갱신|범프)/i.test(message.content || "")) return;
+
+      const accepted = await pool.query(
+        `INSERT INTO bump_cooldowns (guild_id, bumped_at)
+         VALUES ($1, NOW())
+         ON CONFLICT (guild_id) DO UPDATE
+           SET bumped_at = NOW()
+           WHERE bump_cooldowns.bumped_at <= NOW() - ($2 * INTERVAL '1 minute')
+         RETURNING bumped_at`,
+        [message.guild.id, COOLDOWN_MINUTES]
+      );
+
+      const settings = await getSettings(message.guild.id);
+      const channel = settings.announcement_channel_id
+        ? await message.guild.channels.fetch(settings.announcement_channel_id).catch(() => null)
+        : null;
+
+      if (accepted.rowCount === 0) {
+        const previous = await pool.query(
+          `SELECT GREATEST(0, CEIL(EXTRACT(EPOCH FROM
+            (bumped_at + ($2 * INTERVAL '1 minute') - NOW())) / 60)::int AS minutes_left
+           FROM bump_cooldowns WHERE guild_id = $1`,
+          [message.guild.id, COOLDOWN_MINUTES]
+        );
+        const minutes = previous.rows[0]?.minutes_left ?? COOLDOWN_MINUTES;
+        if (channel?.isTextBased()) {
+          await channel.send({ embeds: [
+            new EmbedBuilder().setColor(0xffb454).setTitle("⏳ DIF 범프 대기시간")
+              .setDescription(`요청은 확인했지만 아직 범프 대기시간입니다. 약 ${minutes}분 후 다시 시도해 주세요.`)
+              .setFooter({ text: "DIF — Discord Bump Network" })
+          ] }).catch((e) => console.error("[DIF] 공개 Embed 전송 실패:", e));
+        }
+        return;
+      }
+
+      await pool.query(
+        "INSERT INTO bump_events (guild_id, guild_name, source) VALUES ($1, $2, $3)",
+        [message.guild.id, message.guild.name, "지정 사용자 자동 범프"]
+      );
+      await message.react("🧡").catch(() => {});
+      if (channel?.isTextBased()) {
+        await channel.send({ embeds: [
+          new EmbedBuilder().setColor(0x69ddeb).setTitle("🧡 DIF 자동 범프 완료")
+            .setDescription(`**${message.guild.name}** 서버에서 지정 사용자의 범프 요청을 처리했습니다.`)
+            .addFields({ name: "요청 키워드", value: message.content.includes("갱신") ? "갱신" : "범프", inline: true },
+                       { name: "대기시간", value: "120분", inline: true })
+            .setTimestamp(accepted.rows[0].bumped_at)
+            .setFooter({ text: "DIF — Discord Bump Network" })
+        ] }).catch((e) => console.error("[DIF] 공개 Embed 전송 실패:", e));
+      }
+      console.log("[DIF] 지정 사용자 자동 범프 실행:", message.guild.name);
+      return;
+    }
+
+    // DISBOARD와 디코리스트 봇 메시지만 감지
+    if (!message.author.bot) return;
     const sourceName = BUMP_BOTS[message.author.id];
-    if (!sourceName) return;
-    // 이 ID의 메시지는 키워드 검사 없이 즉시 범프 감지 처리
-    if (message.author.id !== "1252620171089019021" && !containsBumpKeyword(message)) return;
+    if (!sourceName || !containsBumpKeyword(message)) return;
     const settings = await getSettings(message.guild.id);
     const saved = await pool.query("INSERT INTO bump_events (guild_id, guild_name, source) VALUES ($1, $2, $3) RETURNING bumped_at", [message.guild.id, message.guild.name, sourceName]);
     await message.react("🧡").catch((e) => console.error("[DIF] 반응 추가 실패:", e));
