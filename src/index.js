@@ -225,7 +225,7 @@ client.on("messageCreate", async (message) => {
       if (accepted.rowCount === 0) {
         const previous = await pool.query(
           `SELECT GREATEST(0, CEIL(EXTRACT(EPOCH FROM
-            (bumped_at + ($2 * INTERVAL '1 minute') - NOW())) / 60)::int AS minutes_left
+            (bumped_at + ($2 * INTERVAL '1 minute') - NOW())) / 60)::int) AS minutes_left
            FROM bump_cooldowns WHERE guild_id = $1`,
           [message.guild.id, COOLDOWN_MINUTES]
         );
