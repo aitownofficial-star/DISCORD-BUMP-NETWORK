@@ -1,0 +1,15 @@
+services:
+  - type: worker
+    name: discord-bump-network
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: CLIENT_ID
+        sync: false
+      - key: DATABASE_URL
+        sync: false
