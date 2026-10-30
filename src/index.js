@@ -39,6 +39,23 @@ web.listen(PORT, "0.0.0.0", () => {
   console.log(`[DIF] HTTP server listening on port ${PORT}`);
 });
 
+// Render에 배포된 사이트의 상태 확인 엔드포인트를 10분마다 호출합니다.
+const SELF_PING_URL = process.env.RENDER_EXTERNAL_URL
+  ? `${process.env.RENDER_EXTERNAL_URL}/health`
+  : "https://discord-bump-network.onrender.com/health";
+
+async function selfPing() {
+  try {
+    const response = await fetch(SELF_PING_URL);
+    console.log(`[DIF] 10분 주기 사이트 핑: HTTP ${response.status}`);
+  } catch (error) {
+    console.error("[DIF] 사이트 핑 실패:", error.message);
+  }
+}
+
+setInterval(selfPing, 10 * 60 * 1000);
+
+
 const required = ["DISCORD_TOKEN", "CLIENT_ID", "DATABASE_URL"];
 for (const key of required) {
   if (!process.env[key]) {
