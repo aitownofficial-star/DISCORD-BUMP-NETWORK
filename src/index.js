@@ -8,6 +8,26 @@ const {
   ChannelType,
 } = require("discord.js");
 const { Pool } = require("pg");
+const express = require("express");
+
+const web = express();
+const PORT = Number(process.env.PORT) || 10000;
+
+web.get("/", (_req, res) => {
+  res.status(200).send("DIF - Discord Bump Network is running.");
+});
+
+web.get("/health", (_req, res) => {
+  res.status(200).json({
+    ok: true,
+    service: "DIF",
+    bot: client.isReady() ? "online" : "starting",
+  });
+});
+
+web.listen(PORT, "0.0.0.0", () => {
+  console.log(`[DIF] HTTP server listening on port ${PORT}`);
+});
 
 const required = ["DISCORD_TOKEN", "CLIENT_ID", "DATABASE_URL"];
 for (const key of required) {
@@ -123,7 +143,6 @@ async function handleBump(interaction) {
     });
   }
 
-  // Atomic update: simultaneous requests cannot bypass the server cooldown.
   const result = await pool.query(
     `INSERT INTO bump_cooldowns (guild_id, bumped_at)
      VALUES ($1, NOW())
