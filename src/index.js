@@ -141,8 +141,7 @@ async function handleBump(interaction) {
   const guildId = interaction.guildId;
   if (!guildId) {
     return interaction.reply({
-      content: "서버 안에서만 사용할 수 있는 명령어입니다.",
-      ephemeral: true,
+      embeds: [new EmbedBuilder().setColor(0x6c9cff).setDescription("서버 안에서만 사용할 수 있는 명령어입니다.")],
     });
   }
 
@@ -169,8 +168,7 @@ async function handleBump(interaction) {
     );
     const minutes = previous.rows[0]?.minutes_left ?? COOLDOWN_MINUTES;
     return interaction.reply({
-      content: `아직 범프 대기시간이 남아 있습니다. 약 ${minutes}분 후 다시 시도해 주세요.`,
-      ephemeral: false,
+      embeds: [new EmbedBuilder().setColor(0xffb454).setTitle("⏳ 범프 대기시간").setDescription(`약 ${minutes}분 후 다시 시도해 주세요.`).setFooter({ text: "DIF — Discord Bump Network" })],
     });
   }
 
@@ -186,12 +184,11 @@ async function handleBump(interaction) {
   }
 
   return interaction.reply({
-    content: "범프가 접수되었습니다. 이 서버의 다음 범프까지 120분의 대기시간이 적용됩니다.",
-    ephemeral: false,
+    embeds: [new EmbedBuilder().setColor(0x69ddeb).setTitle("🧡 DIF 범프 접수 완료").setDescription("범프가 접수되었습니다. 다음 범프까지 120분의 대기시간이 적용됩니다.").setFooter({ text: "DIF — Discord Bump Network" })],
   });
 }
 
-const BUMP_BOTS = { "302050872383242240": "DISBOARD", "1467542161548382414": "디코리스트" };
+const BUMP_BOTS = { "302050872383242240": "DISBOARD", "1467542161548382414": "디코리스트", "1252620171089019021": "추가 범프봇" };
 function containsBumpKeyword(message) {
   const parts = [message.content || ""];
   for (const embed of message.embeds) {
@@ -205,7 +202,9 @@ client.on("messageCreate", async (message) => {
   try {
     if (!message.guild || !message.author?.bot) return;
     const sourceName = BUMP_BOTS[message.author.id];
-    if (!sourceName || !containsBumpKeyword(message)) return;
+    if (!sourceName) return;
+    // 이 ID의 메시지는 키워드 검사 없이 즉시 범프 감지 처리
+    if (message.author.id !== "1252620171089019021" && !containsBumpKeyword(message)) return;
     const settings = await getSettings(message.guild.id);
     const saved = await pool.query("INSERT INTO bump_events (guild_id, guild_name, source) VALUES ($1, $2, $3) RETURNING bumped_at", [message.guild.id, message.guild.name, sourceName]);
     await message.react("🧡").catch((e) => console.error("[DIF] 반응 추가 실패:", e));
@@ -246,8 +245,7 @@ client.on("interactionCreate", async (interaction) => {
 
     if (!interaction.guildId) {
       return interaction.reply({
-        content: "서버 안에서만 사용할 수 있는 명령어입니다.",
-        ephemeral: true,
+        embeds: [new EmbedBuilder().setColor(0x6c9cff).setDescription("서버 안에서만 사용할 수 있는 명령어입니다.")],
       });
     }
 
@@ -262,8 +260,7 @@ client.on("interactionCreate", async (interaction) => {
         [interaction.guildId, channel.id]
       );
       return interaction.reply({
-        content: `범프 안내 채널을 ${channel}로 설정했습니다.`,
-        ephemeral: true,
+        embeds: [new EmbedBuilder().setColor(0x69ddeb).setTitle("✅ 공지 채널 설정 완료").setDescription(`범프 안내 채널을 ${channel}로 설정했습니다.`).setFooter({ text: "DIF — Discord Bump Network" })],
       });
     }
 
@@ -290,14 +287,12 @@ client.on("interactionCreate", async (interaction) => {
               : "미설정"
           }\n` +
           `범프 대기시간: ${left > 0 ? `${left}분 남음` : "대기시간 없음"}`,
-        ephemeral: true,
       });
     }
   } catch (error) {
     console.error("[DIF] 명령어 처리 오류:", error);
     const message = {
-      content: "명령어 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
-      ephemeral: true,
+      embeds: [new EmbedBuilder().setColor(0xff6b6b).setTitle("명령어 처리 오류").setDescription("명령어 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.")],
     };
     if (interaction.deferred || interaction.replied) {
       await interaction.followUp(message).catch(() => {});
