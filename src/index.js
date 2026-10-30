@@ -19,6 +19,7 @@ const PORT = Number(process.env.PORT) || 10000;
 
 web.use(express.static(path.join(__dirname, "..", "public")));
 web.get("/privacy-policy", (_req, res) => res.sendFile(path.join(__dirname, "..", "public", "privacy-policy.html")));
+web.get("/terms-of-service", (_req, res) => res.sendFile(path.join(__dirname, "..", "public", "terms-of-service.html")));
 web.get("/", (_req, res) => res.sendFile(path.join(__dirname, "..", "public", "index.html")));
 web.get("/api/stats", async (_req, res) => {
   try {
