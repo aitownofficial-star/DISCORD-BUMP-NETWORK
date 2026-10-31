@@ -240,6 +240,8 @@ async function handleBump(interaction) {
 
 const BUMP_BOTS = { "302050872383242240": "DISBOARD", "1467542161548382414": "디코리스트" };
 const AUTO_BUMP_USER_ID = "1252620171089019021";
+const recentBumpGuard = new Map();
+const BUMP_DUPLICATE_WINDOW_MS = 5000;
 function containsBumpKeyword(message) {
   const parts = [message.content || ""];
   for (const embed of message.embeds) {
@@ -259,6 +261,12 @@ client.on("messageCreate", async (message) => {
 
     // 메시지 본문 또는 Embed에서 범프/갱신 키워드를 감지합니다.
     if (message.author.id !== AUTO_BUMP_USER_ID && !containsBumpKeyword(message)) return;
+
+    // 같은 서버에서 범프가 감지된 뒤 5초 동안 들어오는 중복 범프 이벤트는 무시합니다.
+    const now = Date.now();
+    const lastBumpAt = recentBumpGuard.get(message.guild.id) || 0;
+    if (now - lastBumpAt < BUMP_DUPLICATE_WINDOW_MS) return;
+    recentBumpGuard.set(message.guild.id, now);
 
     const isTrustedUser = message.author.id === AUTO_BUMP_USER_ID;
     const sourceName = isTrustedUser
