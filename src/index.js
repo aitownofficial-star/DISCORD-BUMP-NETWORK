@@ -24,8 +24,8 @@ web.get("/", (_req, res) => res.sendFile(path.join(__dirname, "..", "public", "i
 web.get("/api/stats", async (_req, res) => {
   try {
     const totals = await pool.query("SELECT COUNT(DISTINCT guild_id)::int AS server_count, COUNT(*)::int AS bump_count, COUNT(*) FILTER (WHERE bumped_at >= NOW() - INTERVAL '1 day')::int AS recent_count FROM bump_events");
-    const servers = await pool.query("SELECT e.guild_id AS id, MAX(e.guild_name) AS name, COUNT(*)::int AS bump_count, MAX(e.bumped_at) AS last_bump_at, MAX(gs.invite_url) AS invite_url FROM bump_events e LEFT JOIN guild_settings gs ON gs.guild_id = e.guild_id GROUP BY e.guild_id ORDER BY MAX(e.bumped_at) DESC LIMIT 100");
-    res.json({ serverCount: totals.rows[0].server_count, bumpCount: totals.rows[0].bump_count, recentCount: totals.rows[0].recent_count, servers: servers.rows.map((s) => ({ id: s.id, name: s.name, bumpCount: s.bump_count, lastBumpAt: s.last_bump_at, inviteUrl: s.invite_url })) });
+    const servers = await pool.query("SELECT e.guild_id AS id, MAX(e.guild_name) AS name, COUNT(*)::int AS bump_count, MAX(e.bumped_at) AS last_bump_at, MAX(gs.invite_url) AS invite_url, MAX(gs.icon_url) AS icon_url FROM bump_events e LEFT JOIN guild_settings gs ON gs.guild_id = e.guild_id GROUP BY e.guild_id ORDER BY MAX(e.bumped_at) DESC LIMIT 100");
+    res.json({ serverCount: totals.rows[0].server_count, bumpCount: totals.rows[0].bump_count, recentCount: totals.rows[0].recent_count, servers: servers.rows.map((s) => ({ id: s.id, name: s.name, bumpCount: s.bump_count, lastBumpAt: s.last_bump_at, inviteUrl: s.invite_url, iconUrl: s.icon_url })) });
   } catch (error) { console.error("[DIF] 통계 조회 오류:", error); res.status(503).json({ error: "통계를 불러올 수 없습니다." }); }
 });
 
@@ -119,6 +119,7 @@ async function initializeDatabase() {
     )
   `);
   await pool.query("ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS invite_url TEXT");
+  await pool.query("ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS icon_url TEXT");
 }
 
 async function getOrCreateServerInvite(guild, preferredChannelId) {
@@ -265,6 +266,13 @@ client.on("messageCreate", async (message) => {
       : (BUMP_BOTS[message.author.id]
           || (message.author.bot ? `봇: ${message.author.username}` : `사용자: ${message.author.username}`));
 
+    const serverIcon = message.guild.iconURL({ size: 256, extension: "png" });
+    await pool.query(
+      `INSERT INTO guild_settings (guild_id, icon_url, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (guild_id) DO UPDATE SET icon_url = EXCLUDED.icon_url, updated_at = NOW()`,
+      [message.guild.id, serverIcon]
+    );
     const saved = await pool.query(
       "INSERT INTO bump_events (guild_id, guild_name, source) VALUES ($1, $2, $3) RETURNING bumped_at",
       [message.guild.id, message.guild.name, sourceName]
