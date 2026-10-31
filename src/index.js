@@ -296,15 +296,19 @@ client.on("messageCreate", async (message) => {
     if (message.channel?.isTextBased() && message.channel.send) {
       const embed = new EmbedBuilder()
         .setColor(0x69ddeb)
-        .setTitle("🧡 서버 범프 완료!")
-        .setDescription(`**${message.guild.name}** 서버의 범프가 완료되었습니다.`)
+        .setTitle("🧡 DIF 네트워크 서버 갱신 완료!")
+        .setDescription(
+          `**${message.guild.name}** 서버가 DIF 사이트에 새롭게 반영됐어요.\n` +
+          "이번 범프로 서버가 목록 최상단으로 올라갔어요!\n\n" +
+          "DIF에서 다양한 디스코드 커뮤니티를 둘러보고, 내 서버도 함께 소개해 보세요.\n\n" +
+          "[DIF 사이트에서 서버 둘러보기 · 내 서버 알리기](https://discord-bump-network.onrender.com)"
+        )
         .addFields(
-          { name: "감지 서비스", value: sourceName, inline: true },
-          { name: "누적 감지 횟수", value: String(count.rows[0].n), inline: true },
-          { name: "감지 채널", value: `<#${message.channel.id}>`, inline: true }
+          { name: "범프 감지 서비스", value: sourceName, inline: true },
+          { name: "누적 범프", value: String(count.rows[0].n), inline: true }
         )
         .setTimestamp(saved.rows[0].bumped_at)
-        .setFooter({ text: "DIF — Discord Bump Network" });
+        .setFooter({ text: "DIF는 DISBOARD 또는 디코리스트의 범프를 감지해 서버 정보를 갱신합니다." });
 
       await message.channel.send({ embeds: [embed] }).catch((e) => {
         console.error("[DIF] 원본 채널 Embed 전송 실패:", e);
